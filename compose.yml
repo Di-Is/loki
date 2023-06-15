@@ -1,0 +1,40 @@
+name: test
+
+services:
+  loki:
+    build: 
+      context: ./
+      dockerfile: ./tests/loki/Dockerfile
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./tests/loki/config.yml:/etc/loki/config.yml:ro
+
+  promtail:
+    image: grafana/promtail:2.8.2
+    volumes:
+      - ./tests/promtail/config.yml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yaml
+
+  log-generator:
+    image: mingrammer/flog:0.4.3
+    command:
+      - --loop
+      - --format=json
+      - --number=1 # number of log lines to generate per second
+      - --delay=1s
+      - --type=stdout
+
+  series_curl:
+    build: ./tests/series_curl
+    volumes:
+      - ./tests/series_curl:/tests/series_curl
+      - /etc/localtime:/etc/localtime:ro
+    entrypoint:
+      - /bin/sh
+      - /tests/series_curl/entrypoint.sh
+
+networks:
+  test_network:
+  default:
+    name: test_network

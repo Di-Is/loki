@@ -428,8 +428,19 @@ func (s *mockStore) SelectSamples(_ context.Context, _ logql.SelectSampleParams)
 	return nil, nil
 }
 
-func (s *mockStore) GetSeries(_ context.Context, _ logql.SelectLogParams) ([]logproto.SeriesIdentifier, error) {
-	return nil, nil
+func (s *mockStore) Series(_ context.Context, req logql.SelectLogParams) ([]logproto.SeriesIdentifier, error) {
+	thresTime := time.Now().Add(-1 * time.Hour)
+	if !thresTime.Before(req.Start) {
+		return []logproto.SeriesIdentifier{
+			{
+				Labels: map[string]string{
+					"foo": "bar",
+					"bar": "baz2",
+				},
+			}}, nil
+	} else {
+		return nil, nil
+	}
 }
 
 func (s *mockStore) GetSchemaConfigs() []config.PeriodConfig {
@@ -1137,6 +1148,145 @@ func TestSeriesVolume(t *testing.T) {
 			{Name: `{host="agent", log_stream="worker"}`, Value: "", Volume: 70},
 		}, volumes.Volumes)
 	})
+}
+
+
+func Test_InMemorySeries(t *testing.T) {
+	ingesterConfig := defaultIngesterTestConfig(t)
+	limits, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+
+	store := &mockStore{
+		chunks: map[string][]chunk.Chunk{},
+	}
+
+	i, err := New(ingesterConfig, client.Config{}, store, limits, runtime.DefaultTenantConfigs(), nil)
+	require.NoError(t, err)
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	req := logproto.PushRequest{
+		Streams: []logproto.Stream{
+			{
+				Labels: `{foo="bar",bar="baz1"}`,
+			},
+			{
+				Labels: `{foo="bar",bar="baz2"}`,
+			},
+		},
+	}
+	for i := 0; i < 10; i++ {
+		req.Streams[0].Entries = append(req.Streams[0].Entries, logproto.Entry{
+			Timestamp: time.Unix(0, 0),
+			Line:      fmt.Sprintf("line %d", i),
+		})
+		req.Streams[1].Entries = append(req.Streams[1].Entries, logproto.Entry{
+			Timestamp: time.Unix(0, 0),
+			Line:      fmt.Sprintf("line %d", i),
+		})
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	_, err = i.Push(ctx, &req)
+	require.NoError(t, err)
+
+	res, err := i.Series(ctx, &logproto.SeriesRequest{
+		Start:  time.Unix(0, 0),
+		End:  time.Unix(1, 0),
+		Groups: []string{`{foo="bar"}`},
+	})
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, []logproto.SeriesIdentifier{
+		{
+			Labels: map[string]string{
+				"foo": "bar",
+				"bar": "baz1",
+			},
+		},
+		{
+			Labels: map[string]string{
+				"foo": "bar",
+				"bar": "baz2",
+			},
+		},
+	}, res.Series)
+}
+
+func Test_InMemoryAndStoreSeries(t *testing.T) {
+	ingesterConfig := defaultIngesterTestConfig(t)
+	ingesterConfig.QueryStore = true
+	limits, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+
+	store := &mockStore{
+		chunks: map[string][]chunk.Chunk{},
+	}
+
+	i, err := New(ingesterConfig, client.Config{}, store, limits, runtime.DefaultTenantConfigs(), nil)
+	require.NoError(t, err)
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	req := logproto.PushRequest{
+		Streams: []logproto.Stream{
+			{
+				Labels: `{foo="bar",bar="baz1"}`,
+			},
+		},
+	}
+	timeInMemory := time.Now()
+	for i := 0; i < 10; i++ {
+		req.Streams[0].Entries = append(req.Streams[0].Entries, logproto.Entry{
+			Timestamp: timeInMemory,
+			Line:      fmt.Sprintf("line %d", i),
+		},
+	)
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	_, err = i.Push(ctx, &req)
+	require.NoError(t, err)
+
+	// 
+	timeStart := time.Now().Add(-2 * time.Hour)
+	res, err := i.Series(ctx, &logproto.SeriesRequest{
+		Start: timeStart,
+		End: time.Now(),
+		Groups: []string{`{foo="bar"}`},
+	})
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, []logproto.SeriesIdentifier{
+		{
+			Labels: map[string]string{
+				"foo": "bar",
+				"bar": "baz1",
+			},
+		},
+		{
+			Labels: map[string]string{
+				"foo": "bar",
+				"bar": "baz2",
+			},
+		},
+	}, res.Series)
+	
+	// 
+	timeStart = time.Now().Add(-30 * time.Minute)
+	res, err = i.Series(ctx, &logproto.SeriesRequest{
+		Start: timeStart,
+		End: time.Now(),
+		Groups: []string{`{foo="bar"}`},
+	})
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, []logproto.SeriesIdentifier{
+		{
+			Labels: map[string]string{
+				"foo": "bar",
+				"bar": "baz1",
+			},
+		},
+	}, res.Series)
 }
 
 type ingesterClient struct {
