@@ -27,6 +27,7 @@ services:
 
   series_curl:
     build: ./tests/series_curl
+    user: ${UID}:${GID}
     volumes:
       - ./tests/series_curl:/tests/series_curl
       - /etc/localtime:/etc/localtime:ro

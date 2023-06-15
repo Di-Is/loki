@@ -8,14 +8,14 @@ FROM alpine:3.16.5
 
 RUN apk add --no-cache ca-certificates libcap
 
-COPY --from=build /src/loki/tests/loki/loki /usr/bin/loki
-COPY tests/loki/loki-docker-config.yaml /etc/loki/local-config.yaml
+COPY --from=build /src/loki/cmd/loki/loki /usr/bin/loki
 
 RUN addgroup -g 10001 -S loki && \
     adduser -u 10001 -S loki -G loki
 RUN mkdir -p /loki/rules && \
     mkdir -p /loki/rules-temp && \
-    chown -R loki:loki /etc/loki /loki
+    mkdir -p /etc/loki && \
+    chown -R loki:loki /loki
 
 COPY ./tests/loki/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
