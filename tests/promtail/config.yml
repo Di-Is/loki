@@ -7,8 +7,6 @@ positions:
 
 clients:
   - url: http://test-loki-1:3100/loki/api/v1/push
-    external_labels:
-      mon_depth1: server1
 
 scrape_configs:
   - job_name: flog_scrape 
@@ -17,25 +15,23 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: name
-            values: ["test-log-generator-1"]
+            values: ["test-flog-1"]
     relabel_configs:
       - source_labels: ['__meta_docker_container_name']
         regex: '/(.*)'
         target_label: 'container'
-      - source_labels: ['__meta_docker_container_log_stream']
-        target_label: 'stream'
     pipeline_stages:
       - match:
-          selector: '{container="test-log-generator-1"}'
+          selector: '{container="test-flog-1"}'
           stages:
           - json:
               expressions:
                 ts:
-                status:
                 method:
+                protocol:
           - labels:
-              status:
               method:
+              protocol:
           - timestamp:
               source: ts
               format: RFC3339Nano

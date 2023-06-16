@@ -8,15 +8,19 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./tests/loki/config.yml:/etc/loki/config.yml:ro
-
+    depends_on:
+      - series_curl
+      
   promtail:
     image: grafana/promtail:2.8.2
     volumes:
       - ./tests/promtail/config.yml:/etc/promtail/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
     command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - series_curl
 
-  log-generator:
+  flog:
     image: mingrammer/flog:0.4.3
     command:
       - --loop
@@ -24,10 +28,12 @@ services:
       - --number=1 # number of log lines to generate per second
       - --delay=1s
       - --type=stdout
+    depends_on:
+      - series_curl
 
   series_curl:
     build: ./tests/series_curl
-    user: ${UID}:${GID}
+    user: ${_UID}:${_GID}
     volumes:
       - ./tests/series_curl:/tests/series_curl
       - /etc/localtime:/etc/localtime:ro
