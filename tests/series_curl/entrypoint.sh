@@ -1,32 +1,51 @@
+#!/bin/bash
 RESULT_DIR="/tests/series_curl/results"
-LOG_FILE="series_result.log"
+LOG_FILE="series_result.csv"
 LOG_PATH="$RESULT_DIR/$LOG_FILE"
+MAX_TIME=50
+STEP=5
 
 if [ ! -d $RESULT_DIR ]; then
 	mkdir $RESULT_DIR
 fi
 
-echo "" > $LOG_PATH
-echo "elapsed_time[m],Now-5mAgo,10mAgo-15mAgo,45mAgo-50mAgo" >> $LOG_PATH
-
-sleep 15
+# make csv column
+COL_ARR=("time[m]")
+for ((i=0; i < $MAX_TIME; i+=$STEP)); do
+	_I_START=$(( i + STEP ))
+	COL_ARR+=("$i-$_I_START")
+done
+COL_JOIN=`(IFS=','; echo "${COL_ARR[*]}")`
+echo $COL_JOIN > $LOG_PATH
 
 ExeStartTime=`date +%s`
 while true
 do
-	T50mAgo=`date +%s%N -d "50 minute ago"`
-	T45mAgo=`date +%s%N -d "45 minute ago"`
-	T15mAgo=`date +%s%N -d "15 minute ago"`
-	T10mAgo=`date +%s%N -d "10 minute ago"`
-	T5mAgo=`date +%s%N -d "5 minute ago"`
-	TNow=`date +%s%N`
+	sleep 60
 
-	ResNowTo5mAgo=`curl -s "http://test-loki-1:3100/loki/api/v1/series?end=$TNow&start=$T5mAgo" --data-urlencode 'match[]={container="test-flog-1",method="GET"}' | jq -r .data[].protocol | jq -csR 'split("\n")[:-1]'`
-	Res10mAgoTo15mAgo=`curl -s "http://test-loki-1:3100/loki/api/v1/series?end=$T10mAgo&start=$T15mmAgo" --data-urlencode 'match[]={container="test-flog-1",method="GET"}' | jq -r .data[].protocol | jq -csR 'split("\n")[:-1]'`
-	Res45mAgoTo50mAgo=`curl -s "http://test-loki-1:3100/loki/api/v1/series?end=$T45mAgo&start=$T50mAgo" --data-urlencode 'match[]={container="test-flog-1",method="GET"}' | jq -r .data[].protocol | jq -csR 'split("\n")[:-1]'`
+	# get series api result
+	TNow=`date +%s%N`
+	RES_ARR=()
+	for ((i=0; i < $MAX_TIME; i+=$STEP)); do
+		_I_START=$(( i + STEP ))
+		_DIFF_S=$(( _I_START * 1000000000 * 60 ))
+		_DIFF_E=$(( i * 1000000000 * 60  ))
+		T_START=$(( TNow - _DIFF_S ))
+		T_END=$(( TNow - _DIFF_E ))
+		# request series api
+		RES=`curl -s "http://test-loki-1:3100/loki/api/v1/series?start=$T_START&end=$T_END" \
+		 --data-urlencode 'match[]={filename="/var/log/flog.log",method="GET"}' | \
+		 jq -r .data[].protocol | \
+		 jq -csR 'split("\n")[:-1]' | \
+		 jq length` 
+		RES_ARR+=($RES)
+	done
+
+	# Output result
+	RES_JOIN=`(IFS=','; echo "${RES_ARR[*]}")`
 	ExeEndTime=`date +%s`
 	RunTime=$((ExeEndTime - ExeStartTime))
 	RunTime=$((RunTime / 60))
-	echo "$RunTime,$ResNowTo5mAgo,$Res10mAgoTo15mAgo,$Res45mAgoTo50mAgo" >> $LOG_PATH
-	sleep 60
+	echo "$RunTime,$RES_JOIN" >> $LOG_PATH
+
 done

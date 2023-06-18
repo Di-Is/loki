@@ -6,40 +6,38 @@ services:
       context: ./
       dockerfile: ./tests/loki/Dockerfile
     volumes:
-      - /etc/localtime:/etc/localtime:ro
       - ./tests/loki/config.yml:/etc/loki/config.yml:ro
-    depends_on:
-      - series_curl
-      
+
   promtail:
     image: grafana/promtail:2.8.2
+    user: ${_UID}:${_GID}
     volumes:
       - ./tests/promtail/config.yml:/etc/promtail/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
-    command: -config.file=/etc/promtail/config.yaml
-    depends_on:
-      - series_curl
+      - ./tests/series_curl/input_log:/var/log
+    command:
+      - --config.file=/etc/promtail/config.yaml
 
   flog:
     image: mingrammer/flog:0.4.3
+    user: ${_UID}:${_GID}
     command:
       - --loop
       - --format=json
-      - --number=1 # number of log lines to generate per second
+      - --number=1 
       - --delay=1s
-      - --type=stdout
-    depends_on:
-      - series_curl
+      - --type=log
+      - --output=/var/log/flog.log
+      - --overwrite         
+    volumes:
+      - ./tests/series_curl/input_log:/var/log
 
   series_curl:
     build: ./tests/series_curl
     user: ${_UID}:${_GID}
     volumes:
       - ./tests/series_curl:/tests/series_curl
-      - /etc/localtime:/etc/localtime:ro
-    entrypoint:
-      - /bin/sh
-      - /tests/series_curl/entrypoint.sh
+    init: true
 
 networks:
   test_network:
