@@ -1087,10 +1087,16 @@ func (i *Ingester) Series(ctx context.Context, req *logproto.SeriesRequest) (*lo
 
 	if start, end, ok := buildStoreRequest(i.cfg, req.Start, req.End, time.Now()); ok {
 		var storeSeries []logproto.SeriesIdentifier
-		if len(req.Groups) == 0 {
+		
+		groups := []string {""}
+		if len(req.Groups) != 0 {
+			groups = req.Groups
+		}
+
+		for _, group := range groups {
 			storeSeries, err = i.store.Series(ctx, logql.SelectLogParams{
 				QueryRequest: &logproto.QueryRequest{
-					Selector:  "",
+					Selector:  group,
 					Limit:     1,
 					Start:     start,
 					End:       end,
@@ -1104,26 +1110,7 @@ func (i *Ingester) Series(ctx context.Context, req *logproto.SeriesRequest) (*lo
 			for _, s := range storeSeries {
 				resp.Series = append(resp.Series, s)
 			}
-		} else {
-			for _, group := range req.Groups {
-				storeSeries, err = i.store.Series(ctx, logql.SelectLogParams{
-					QueryRequest: &logproto.QueryRequest{
-						Selector:  group,
-						Limit:     1,
-						Start:     start,
-						End:       end,
-						Direction: logproto.FORWARD,
-						Shards:    req.Shards,
-					},
-				})
-				if err != nil {
-					return nil, err
-				}
-				for _, s := range storeSeries {
-					resp.Series = append(resp.Series, s)
-				}
-			}
-		}	
+		}
 	}
 	return resp, nil
 }
